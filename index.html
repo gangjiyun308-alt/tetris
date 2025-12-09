@@ -4,7 +4,118 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>모바일 테트리스</title>
-    <link rel="stylesheet" href="style.css">
+    <style>
+        /* ------------------------------------- */
+        /* CSS: 모바일 친화적 디자인 */
+        /* ------------------------------------- */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #2c3e50; /* 어두운 배경 */
+            color: #ecf0f1; /* 밝은 텍스트 */
+            overflow: hidden; 
+            touch-action: manipulation; /* 터치 지연 방지 */
+        }
+
+        #game-container {
+            text-align: center;
+            width: 100%;
+            max-width: 400px; /* 모바일 환경에 적합한 최대 너비 */
+            padding: 10px;
+            box-sizing: border-box;
+            background-color: #34495e;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            color: #3498db;
+            margin-bottom: 10px;
+        }
+
+        #score-display {
+            font-size: 1.5em;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+
+        #tetris-canvas {
+            border: 5px solid #bdc3c7;
+            background-color: #1c2833;
+            display: block;
+            margin: 0 auto 20px auto;
+            border-radius: 5px;
+        }
+
+        #message {
+            font-size: 1.2em;
+            color: #f1c40f;
+            min-height: 20px; /* 메시지 영역 확보 */
+            margin-bottom: 15px;
+        }
+
+        /* --- 모바일 조작 버튼 레이아웃 --- */
+        #controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .horizontal-controls {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 300px;
+        }
+
+        .control-btn {
+            padding: 15px 25px;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: white;
+            border: none;
+            border-radius: 50%; /* 원형 버튼으로 디자인 */
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.1s, transform 0.1s;
+            width: 70px; /* 고정 크기 */
+            height: 70px; /* 고정 크기 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        #rotate-btn {
+            background-color: #2980b9; /* 파란색 계열 */
+            width: 100px; /* 회전 버튼을 크게 */
+            height: 50px;
+            border-radius: 25px;
+        }
+        #rotate-btn span { font-size: 1.2em; }
+
+        #left-btn, #right-btn {
+            background-color: #95a5a6; /* 회색 계열 */
+        }
+        
+        #down-btn {
+            background-color: #e74c3c; /* 빨간색 계열 (소프트 드롭 강조) */
+            font-size: 2em;
+        }
+
+        /* 버튼 터치 시 효과 */
+        .control-btn:active {
+            box-shadow: none;
+            transform: translateY(4px);
+            opacity: 0.8;
+        }
+
+    </style>
 </head>
 <body>
 
@@ -15,18 +126,282 @@
 
         <canvas id="tetris-canvas" width="200" height="400"></canvas>
         
-        <div id="message">게임 시작을 위해 아무 버튼이나 누르세요.</div>
+        <div id="message"></div>
         
         <div id="controls">
-            <button id="rotate-btn" class="control-btn">회전</button>
+            <button id="rotate-btn" class="control-btn"><span>회전</span></button>
+            
             <div class="horizontal-controls">
                 <button id="left-btn" class="control-btn">◀</button>
                 <button id="right-btn" class="control-btn">▶</button>
             </div>
+            
             <button id="down-btn" class="control-btn">⬇</button>
         </div>
     </div>
 
-    <script src="game.js"></script>
+    <script>
+        /* ------------------------------------- */
+        /* JavaScript: 게임 로직 */
+        /* ------------------------------------- */
+
+        // 캔버스 및 DOM 요소 설정
+        const canvas = document.getElementById('tetris-canvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+        const messageDisplay = document.getElementById('message');
+
+        // 게임 변수
+        const ROWS = 20;
+        const COLS = 10;
+        const BLOCK_SIZE = canvas.width / COLS; // 20px
+        let board = createBoard();
+        let currentPiece;
+        let score = 0;
+        let gameOver = true; 
+        
+        // 게임 루프 변수
+        let dropCounter = 0;
+        let dropInterval = 1000; // 1초
+        let lastTime = 0;
+        
+        // 테트로미노 정의 (모양과 색상)
+        const TETROMINOES = [
+            { shape: [[0,0,0,0], [1,1,1,1], [0,0,0,0], [0,0,0,0]], color: '#00ffff' }, // I
+            { shape: [[1,0,0], [1,1,1], [0,0,0]], color: '#0000ff' }, // J
+            { shape: [[0,0,1], [1,1,1], [0,0,0]], color: '#ff7f00' }, // L
+            { shape: [[1,1], [1,1]], color: '#ffff00' }, // O
+            { shape: [[0,1,1], [1,1,0], [0,0,0]], color: '#00ff00' }, // S
+            { shape: [[0,1,0], [1,1,1], [0,0,0]], color: '#800080' }, // T
+            { shape: [[1,1,0], [0,1,1], [0,0,0]], color: '#ff0000' } // Z
+        ];
+
+        // --- 함수 정의 ---
+
+        function createBoard() {
+            return Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+        }
+
+        function newPiece() {
+            const rand = Math.floor(Math.random() * TETROMINOES.length);
+            const piece = TETROMINOES[rand];
+            
+            currentPiece = {
+                shape: piece.shape,
+                color: piece.color,
+                x: Math.floor(COLS / 2) - Math.floor(piece.shape[0].length / 2),
+                y: 0
+            };
+            
+            if (checkCollision(0, 0, currentPiece.shape)) {
+                gameOver = true;
+                messageDisplay.textContent = "GAME OVER! 다시 시작하려면 아무 버튼이나 누르세요.";
+            }
+        }
+
+        function drawBlock(x, y, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+            ctx.strokeStyle = '#2c3e50'; // 경계선 색상
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 고정된 블록 그리기
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (board[r][c]) {
+                        drawBlock(c, r, board[r][c]);
+                    }
+                }
+            }
+
+            // 현재 움직이는 블록 그리기
+            if (currentPiece && !gameOver) {
+                for (let r = 0; r < currentPiece.shape.length; r++) {
+                    for (let c = 0; c < currentPiece.shape[r].length; c++) {
+                        if (currentPiece.shape[r][c]) {
+                            drawBlock(currentPiece.x + c, currentPiece.y + r, currentPiece.color);
+                        }
+                    }
+                }
+            }
+        }
+
+        function checkCollision(offsetX, offsetY, shape) {
+            for (let r = 0; r < shape.length; r++) {
+                for (let c = 0; c < shape[r].length; c++) {
+                    if (shape[r][c]) {
+                        const newX = currentPiece.x + c + offsetX;
+                        const newY = currentPiece.y + r + offsetY;
+
+                        // 보드 경계 충돌 검사
+                        if (newX < 0 || newX >= COLS || newY >= ROWS) {
+                            return true;
+                        }
+                        // 다른 고정된 블록과의 충돌 검사
+                        if (newY >= 0 && board[newY] && board[newY][newX]) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function lockPiece() {
+            for (let r = 0; r < currentPiece.shape.length; r++) {
+                for (let c = 0; c < currentPiece.shape[r].length; c++) {
+                    if (currentPiece.shape[r][c]) {
+                        if (currentPiece.y + r >= 0) {
+                            board[currentPiece.y + r][currentPiece.x + c] = currentPiece.color;
+                        }
+                    }
+                }
+            }
+            clearLines();
+            newPiece();
+        }
+
+        // 90도 시계 방향 회전
+        function rotate(shape) {
+            const N = shape.length;
+            const newShape = Array.from({ length: N }, () => Array(N).fill(0));
+
+            for (let r = 0; r < N; r++) {
+                for (let c = 0; c < N; c++) {
+                    newShape[c][N - 1 - r] = shape[r][c];
+                }
+            }
+            return newShape;
+        }
+
+        function clearLines() {
+            let linesCleared = 0;
+            for (let r = ROWS - 1; r >= 0; r--) {
+                if (board[r].every(cell => cell !== 0)) {
+                    linesCleared++;
+                    for (let k = r; k > 0; k--) {
+                        board[k] = board[k - 1];
+                    }
+                    board[0] = Array(COLS).fill(0);
+                    r++; // 제거된 줄을 다시 검사
+                }
+            }
+            
+            // 점수 업데이트
+            if (linesCleared > 0) {
+                // 10, 30, 50, 80 점 (줄 수에 따라)
+                score += [0, 10, 30, 50, 80][linesCleared]; 
+                scoreDisplay.textContent = score;
+            }
+        }
+
+        function movePiece(dx, dy) {
+            if (gameOver) return false;
+            
+            if (checkCollision(dx, dy, currentPiece.shape)) {
+                if (dy > 0) { // 아래로 이동 중 충돌 발생 = 고정
+                    lockPiece();
+                }
+                return false;
+            }
+            currentPiece.x += dx;
+            currentPiece.y += dy;
+            draw();
+            return true;
+        }
+
+        function rotatePiece() {
+            if (gameOver) return;
+
+            const rotatedShape = rotate(currentPiece.shape);
+            
+            // 충돌 검사 후 유효하면 회전 적용
+            if (!checkCollision(0, 0, rotatedShape)) {
+                currentPiece.shape = rotatedShape;
+                draw();
+            }
+        }
+        
+        // --- 게임 실행 및 제어 ---
+
+        function gameLoop(time = 0) {
+            if (gameOver) return;
+            
+            const deltaTime = time - lastTime;
+            lastTime = time;
+            
+            dropCounter += deltaTime;
+            
+            if (dropCounter > dropInterval) {
+                movePiece(0, 1);
+                dropCounter = 0;
+            }
+
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            if (!gameOver) return;
+            
+            board = createBoard();
+            score = 0;
+            scoreDisplay.textContent = score;
+            messageDisplay.textContent = "";
+            gameOver = false;
+            
+            // 드롭 속도 초기화 (필요하다면)
+            dropInterval = 1000; 
+            
+            newPiece();
+            gameLoop();
+        }
+
+        // --- 이벤트 리스너 (모바일 버튼) ---
+
+        // 모든 버튼에 리스너 연결
+        document.getElementById('left-btn').addEventListener('click', () => {
+            if (!gameOver) movePiece(-1, 0);
+            else startGame();
+        });
+
+        document.getElementById('right-btn').addEventListener('click', () => {
+            if (!gameOver) movePiece(1, 0);
+            else startGame();
+        });
+
+        document.getElementById('rotate-btn').addEventListener('click', () => {
+            if (!gameOver) rotatePiece();
+            else startGame();
+        });
+
+        document.getElementById('down-btn').addEventListener('click', () => {
+            if (!gameOver) movePiece(0, 1);
+            else startGame();
+        });
+
+        // 키보드 조작 (데스크탑/개발 환경을 위한 추가)
+        document.addEventListener('keydown', e => {
+            if (gameOver) {
+                startGame();
+                return;
+            }
+            
+            if (e.key === 'ArrowLeft') movePiece(-1, 0);
+            else if (e.key === 'ArrowRight') movePiece(1, 0);
+            else if (e.key === 'ArrowDown') movePiece(0, 1);
+            else if (e.key === 'ArrowUp' || e.key === ' ') rotatePiece();
+        });
+        
+        // 초기 화면 표시
+        messageDisplay.textContent = "게임 시작을 위해 아무 버튼이나 누르세요.";
+        newPiece();
+        draw();
+    </script>
 </body>
 </html>
